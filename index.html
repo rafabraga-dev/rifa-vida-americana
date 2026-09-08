@@ -50,10 +50,12 @@
   .err{color:#A32D2D;font-size:12px;margin:-6px 0 10px;}
   .footer-link{text-align:center;margin-top:10px;}
   .footer-link a{font-size:12px;color:var(--muted);cursor:pointer;}
-  .admin-row{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px;flex-wrap:wrap;}
+  .admin-row{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--line);font-size:14px;flex-wrap:wrap;}
   .admin-row:last-child{border-bottom:none;}
-  .admin-info{flex:1;min-width:140px;}
-  .admin-info .m{font-size:11px;color:var(--muted);}
+  .admin-info{flex:1;min-width:220px;line-height:1.6;}
+  .admin-info b{font-size:16px;color:var(--coral-dark);}
+  .admin-info .m{font-size:13px;color:var(--text);}
+  .admin-info .m.muted{color:var(--muted);}
   .hidden{display:none;}
   .thumb{width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:pointer;}
   .filelabel{display:block;font-size:13px;border:1px dashed var(--line);border-radius:8px;padding:10px;text-align:center;color:var(--muted);margin-bottom:6px;cursor:pointer;}
@@ -489,7 +491,12 @@ function renderAdminList(){
     row.className = "admin-row";
     const info = document.createElement("div");
     info.className = "admin-info";
-    info.innerHTML = "<div><b>"+k+"</b> - "+(n.nome||"")+"</div><div class='m'>"+(n.telefone||"")+" &middot; vendido por "+(n.aluno||"-")+"</div><div class='m'>Pix p/ prêmio ("+(n.pixType||"-")+"): "+(n.pix||"-")+"</div><div class='m'>Comprado em: "+(n.dataCompra||"-")+"</div>";
+    info.innerHTML = "<div><b>Número "+k+"</b></div>"
+      + "<div class='m'>Comprador: "+(n.nome||"-")+"</div>"
+      + "<div class='m'>Telefone: "+(n.telefone||"-")+"</div>"
+      + "<div class='m'>Vendido por: "+(n.aluno||"-")+"</div>"
+      + "<div class='m'>Chave Pix p/ prêmio ("+(n.pixType||"-")+"): "+(n.pix||"-")+"</div>"
+      + "<div class='m muted'>Comprado em: "+(n.dataCompra||"-")+"</div>";
     row.appendChild(info);
     if(n.comprovante){
       const el = document.createElement("img");
@@ -535,12 +542,13 @@ function defaultNumberDoc(){
 
 async function liberarNumero(k){
   const n = numbers[k];
-  if(!confirm("Liberar o número " + k + "? Isso guarda os dados no histórico (não pago) e deixa o número disponível de novo.")) return;
+  const justificativa = prompt("Por que o número " + k + " está sendo liberado? (ex: não pagou em 48h)");
+  if(justificativa === null) return;
   const historicoCol = db.collection("rifa").doc("data").collection("historico");
   await historicoCol.add({
     numero: k, nome: n.nome||"", telefone: n.telefone||"", aluno: n.aluno||"",
     pix: n.pix||"", pixType: n.pixType||"", dataCompra: n.dataCompra||"", comprovante: n.comprovante||"",
-    statusAnterior: n.status||"reservado",
+    statusAnterior: n.status||"reservado", justificativa: justificativa.trim(),
     motivo: "nao_pago", liberadoEm: new Date().toLocaleString("pt-BR"), liberadoTimestamp: Date.now()
   });
   await db.collection("rifa").doc("data").collection("numbers").doc(k).set(defaultNumberDoc());
@@ -595,7 +603,12 @@ async function renderHistoricoTab(box){
     row.className = "admin-row";
     const info = document.createElement("div");
     info.className = "admin-info";
-    info.innerHTML = "<div><b>"+h.numero+"</b> - "+(h.nome||"")+"</div><div class='m'>"+(h.telefone||"")+" &middot; vendido por "+(h.aluno||"-")+"</div><div class='m'>Comprado em: "+(h.dataCompra||"-")+" &middot; Liberado em: "+(h.liberadoEm||"-")+"</div>";
+    info.innerHTML = "<div><b>Número "+h.numero+"</b></div>"
+      + "<div class='m'>Comprador: "+(h.nome||"-")+"</div>"
+      + "<div class='m'>Telefone: "+(h.telefone||"-")+"</div>"
+      + "<div class='m'>Vendido por: "+(h.aluno||"-")+"</div>"
+      + "<div class='m muted'>Comprado em: "+(h.dataCompra||"-")+" &middot; Liberado em: "+(h.liberadoEm||"-")+"</div>"
+      + (h.justificativa ? "<div class='m'>Justificativa: "+h.justificativa+"</div>" : "");
     row.appendChild(info);
     const restaurarBtn = document.createElement("button");
     restaurarBtn.className = "btn small secondary";
@@ -607,22 +620,4 @@ async function renderHistoricoTab(box){
     excluirBtn.textContent = "Excluir";
     excluirBtn.onclick = ()=>excluirHistorico(id);
     row.appendChild(excluirBtn);
-    box.appendChild(row);
-  });
-}
-
-function showProof(dataUrl){
-  document.getElementById("proofContent").innerHTML = "<img src='"+dataUrl+"' style='max-width:100%;border-radius:8px;'>";
-  document.getElementById("proofOverlay").classList.remove("hidden");
-}
-
-async function savePix(){
-  const key = document.getElementById("pixInput").value.trim();
-  await db.collection("rifa").doc("config").set({ pixKey: key }, { merge: true });
-  alert("Chave Pix salva.");
-}
-
-initFirebase();
-</script>
-</body>
-</html>
+    box.appen

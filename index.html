@@ -173,6 +173,41 @@
   </div>
 </div>
 
+<div class="overlay hidden" id="editOverlay">
+  <div class="modal">
+    <h3 id="editTitle">Editar número</h3>
+    <label>Nome do comprador</label>
+    <input id="eName" placeholder="Nome de quem está comprando">
+    <label>Telefone (WhatsApp)</label>
+    <input id="ePhone" placeholder="(19) 99999-0000">
+    <label>Aluno(a) pelo qual está comprando</label>
+    <select id="eAluno">
+      <option value="">Selecione</option>
+      <option>Davi Souza Tischenberg</option>
+      <option>Fabio Henrique De Oliveira Antunes</option>
+      <option>Gabriel Santos de Barros</option>
+      <option>Heloísa Costa dos Santos</option>
+      <option>Matheus Faccioni Cavalcante</option>
+      <option>Maysa Rezende Brancatti</option>
+      <option>Rafaela Braga Santos</option>
+      <option>Vitória Mayse de Noronha Tahara</option>
+    </select>
+    <label>Tipo da chave Pix (para o prêmio)</label>
+    <select id="ePixType">
+      <option value="">Tipo da chave</option>
+      <option value="CPF/CNPJ">CPF/CNPJ</option>
+      <option value="E-mail">E-mail</option>
+      <option value="Telefone">Telefone</option>
+    </select>
+    <label>Chave Pix</label>
+    <input id="ePix" placeholder="Digite a chave Pix">
+    <div style="display:flex;gap:8px;">
+      <button class="btn" onclick="salvarEdicao()">Salvar</button>
+      <button class="btn secondary" onclick="closeOverlay('editOverlay')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay hidden" id="proofOverlay">
   <div class="modal" style="text-align:center;">
     <h3>Comprovante</h3>
@@ -203,6 +238,32 @@ let selected = new Set();
 let pendingNumbers = [];
 let pendingRawFile = null;
 let adminTab = "reservado";
+let editingKey = null;
+
+function abrirEdicao(k){
+  editingKey = k;
+  const n = numbers[k];
+  document.getElementById("editTitle").textContent = "Editar número " + k;
+  document.getElementById("eName").value = n.nome || "";
+  document.getElementById("ePhone").value = n.telefone || "";
+  document.getElementById("eAluno").value = n.aluno || "";
+  document.getElementById("ePixType").value = n.pixType || "";
+  document.getElementById("ePix").value = n.pix || "";
+  document.getElementById("editOverlay").classList.remove("hidden");
+}
+
+async function salvarEdicao(){
+  const nome = document.getElementById("eName").value.trim();
+  const telefone = document.getElementById("ePhone").value.trim();
+  const aluno = document.getElementById("eAluno").value;
+  const pixType = document.getElementById("ePixType").value;
+  const pix = document.getElementById("ePix").value.trim();
+  await db.collection("rifa").doc("data").collection("numbers").doc(editingKey).update({
+    nome, telefone, aluno, pixType, pix
+  });
+  closeOverlay("editOverlay");
+  renderAdminList();
+}
 
 function isConfigured(){
   return FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== "COLE_AQUI";
@@ -413,10 +474,11 @@ async function confirmReserve(){
     const agora = new Date();
     const dataCompra = agora.toLocaleString("pt-BR");
     const timestamp = agora.getTime();
+    const grupoId = pendingNumbers.length > 1 ? (timestamp + "_" + Math.random().toString(36).slice(2,8)) : "";
     const numbersCol = db.collection("rifa").doc("data").collection("numbers");
     const batch = db.batch();
     pendingNumbers.forEach(k=>{
-      batch.set(numbersCol.doc(k), { status:"reservado", nome:name, telefone:phone, aluno:aluno, pix:buyerPix, pixType:buyerPixType, comprovante:comprovante, dataCompra:dataCompra, timestamp:timestamp });
+      batch.set(numbersCol.doc(k), { status:"reservado", nome:name, telefone:phone, aluno:aluno, pix:buyerPix, pixType:buyerPixType, comprovante:comprovante, dataCompra:dataCompra, timestamp:timestamp, grupoId:grupoId });
     });
     await batch.commit();
     selected.clear();
@@ -445,6 +507,12 @@ function setAdminTab(tab){
   const map = { reservado:"tabReservado", pago:"tabPago", historico:"tabHistorico" };
   document.getElementById(map[tab]).style.background = "var(--coral-light)";
   renderAdminList();
+}
+
+function siblingsOf(k){
+  const g = numbers[k] && numbers[k].grupoId;
+  if(!g) return [k];
+  return Object.keys(numbers).filter(x=>numbers[x].grupoId === g && numbers[x].status !== "disponivel");
 }
 
 function parseDateBR(str){
@@ -478,12 +546,14 @@ function renderAdminList(){
     row.className = "admin-row";
     const info = document.createElement("div");
     info.className = "admin-info";
+    const grupo = siblingsOf(k).filter(x=>x!==k);
     info.innerHTML = "<div><b>Número "+k+"</b></div>"
       + "<div class='m'>Comprador: "+(n.nome||"-")+"</div>"
       + "<div class='m'>Telefone: "+(n.telefone||"-")+"</div>"
       + "<div class='m'>Vendido por: "+(n.aluno||"-")+"</div>"
       + "<div class='m'>Chave Pix p/ prêmio ("+(n.pixType||"-")+"): "+(n.pix||"-")+"</div>"
-      + "<div class='m muted'>Comprado em: "+(n.dataCompra||"-")+"</div>";
+      + "<div class='m muted'>Comprado em: "+(n.dataCompra||"-")+"</div>"
+      + (grupo.length ? "<div class='m muted'>Comprado junto com: "+grupo.join(", ")+"</div>" : "");
     row.appendChild(info);
     if(n.comprovante){
       const el = document.createElement("img");
@@ -502,7 +572,11 @@ function renderAdminList(){
       select.appendChild(opt);
     });
     select.onchange = async ()=>{
-      await db.collection("rifa").doc("data").collection("numbers").doc(k).update({ status: select.value });
+      const grupo = siblingsOf(k);
+      const numbersCol = db.collection("rifa").doc("data").collection("numbers");
+      const batch = db.batch();
+      grupo.forEach(gk=>batch.update(numbersCol.doc(gk), { status: select.value }));
+      await batch.commit();
     };
     row.appendChild(select);
 
@@ -512,6 +586,12 @@ function renderAdminList(){
     liberarBtn.title = "Marca como não pago, guarda no histórico e libera o número";
     liberarBtn.onclick = ()=>liberarNumero(k);
     row.appendChild(liberarBtn);
+
+    const editarBtn = document.createElement("button");
+    editarBtn.className = "btn small secondary";
+    editarBtn.textContent = "Editar";
+    editarBtn.onclick = ()=>abrirEdicao(k);
+    row.appendChild(editarBtn);
 
     const excluirBtn = document.createElement("button");
     excluirBtn.className = "btn small secondary";
@@ -524,27 +604,37 @@ function renderAdminList(){
 }
 
 function defaultNumberDoc(){
-  return { status:"disponivel", nome:"", telefone:"", aluno:"", pix:"", pixType:"", comprovante:"", dataCompra:"", timestamp:0 };
+  return { status:"disponivel", nome:"", telefone:"", aluno:"", pix:"", pixType:"", comprovante:"", dataCompra:"", timestamp:0, grupoId:"" };
 }
 
 async function liberarNumero(k){
-  const n = numbers[k];
-  const justificativa = prompt("Por que o número " + k + " está sendo liberado? (ex: não pagou em 48h)");
+  const grupo = siblingsOf(k);
+  const justificativa = prompt("Por que o(s) número(s) " + grupo.join(", ") + " está(ão) sendo liberado(s)? (ex: não pagou em 48h)");
   if(justificativa === null) return;
   const historicoCol = db.collection("rifa").doc("data").collection("historico");
-  await historicoCol.add({
-    numero: k, nome: n.nome||"", telefone: n.telefone||"", aluno: n.aluno||"",
-    pix: n.pix||"", pixType: n.pixType||"", dataCompra: n.dataCompra||"", comprovante: n.comprovante||"",
-    statusAnterior: n.status||"reservado", justificativa: justificativa.trim(),
-    motivo: "nao_pago", liberadoEm: new Date().toLocaleString("pt-BR"), liberadoTimestamp: Date.now()
-  });
-  await db.collection("rifa").doc("data").collection("numbers").doc(k).set(defaultNumberDoc());
+  const numbersCol = db.collection("rifa").doc("data").collection("numbers");
+  await Promise.all(grupo.map(gk=>{
+    const n = numbers[gk];
+    return historicoCol.add({
+      numero: gk, nome: n.nome||"", telefone: n.telefone||"", aluno: n.aluno||"",
+      pix: n.pix||"", pixType: n.pixType||"", dataCompra: n.dataCompra||"", comprovante: n.comprovante||"",
+      statusAnterior: n.status||"reservado", justificativa: justificativa.trim(),
+      motivo: "nao_pago", liberadoEm: new Date().toLocaleString("pt-BR"), liberadoTimestamp: Date.now()
+    });
+  }));
+  const batch = db.batch();
+  grupo.forEach(gk=>batch.set(numbersCol.doc(gk), defaultNumberDoc()));
+  await batch.commit();
   renderAdminList();
 }
 
 async function excluirTeste(k){
-  if(!confirm("Excluir o teste do número " + k + " sem guardar histórico?")) return;
-  await db.collection("rifa").doc("data").collection("numbers").doc(k).set(defaultNumberDoc());
+  const grupo = siblingsOf(k);
+  if(!confirm("Excluir o teste do(s) número(s) " + grupo.join(", ") + " sem guardar histórico?")) return;
+  const numbersCol = db.collection("rifa").doc("data").collection("numbers");
+  const batch = db.batch();
+  grupo.forEach(gk=>batch.set(numbersCol.doc(gk), defaultNumberDoc()));
+  await batch.commit();
   renderAdminList();
 }
 

@@ -618,4 +618,11 @@ function showProof(dataUrl){
 
 async function savePix(){
   const key = document.getElementById("pixInput").value.trim();
-  await db.collection("rifa").doc("config").set({ pixKey: key }
+  await db.collection("rifa").doc("config").set({ pixKey: key }, { merge: true });
+  alert("Chave Pix salva.");
+}
+
+initFirebase();
+</script>
+</body>
+</html>

@@ -103,8 +103,9 @@
 
 <div class="overlay hidden" id="reserveOverlay">
   <div class="modal">
+    <div id="reserveForm">
     <h3 id="reserveTitle">Reservar número</h3>
-    <p>Pague o Pix abaixo (valor já somado para os números escolhidos) e preencha os dados. Sua reserva será analisada; assim que o Pix cair na conta, em até 48h o número aparece no site como "Pago".</p>
+    <p>Pague o Pix abaixo (valor já somado para os números escolhidos) e preencha os dados. Sua reserva será analisada; assim que o Pix cair na conta, em até 48h o número aparece no site como "Pago". Se o pagamento não for identificado em até 48h da reserva, o número volta a ficar disponível.</p>
 
     <div class="pix-box" id="pixBox">
       <span style="font-size:12px;color:var(--muted);">Chave Pix (CPF)</span>
@@ -144,6 +145,12 @@
     <div style="display:flex;gap:8px;">
       <button class="btn" onclick="confirmReserve()">Reservar</button>
       <button class="btn secondary" onclick="closeOverlay('reserveOverlay')">Cancelar</button>
+    </div>
+    </div>
+    <div id="reserveSuccess" class="hidden" style="text-align:center;padding:10px 0;">
+      <p style="font-size:15px;font-weight:500;color:#085041;margin:0 0 8px;">Reserva feita!</p>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 18px;">Sua compra será analisada e, assim que o Pix cair na conta, em até 48h o número aparece no site como "Pago". Se o pagamento não for identificado nesse prazo, o número volta a ficar disponível.</p>
+      <button class="btn" onclick="closeOverlay('reserveOverlay')">Fechar</button>
     </div>
   </div>
 </div>
@@ -317,6 +324,8 @@ function openReserve(ks){
   document.getElementById("rFile").value = "";
   document.getElementById("fileLabel").textContent = "Toque para anexar foto ou print do comprovante";
   document.getElementById("rErr").classList.add("hidden");
+  document.getElementById("reserveForm").classList.remove("hidden");
+  document.getElementById("reserveSuccess").classList.add("hidden");
   renderPixBox(pendingNumbers);
   document.getElementById("reserveOverlay").classList.remove("hidden");
 }
@@ -414,8 +423,8 @@ async function confirmReserve(){
     });
     await batch.commit();
     selected.clear();
-    closeOverlay("reserveOverlay");
-    alert("Reserva feita! Sua compra será analisada e, assim que o Pix cair na conta, em até 48h o número aparece no site como \"Pago\".");
+    document.getElementById("reserveForm").classList.add("hidden");
+    document.getElementById("reserveSuccess").classList.remove("hidden");
   }catch(e){
     console.error(e);
     alert("Não deu para salvar: " + (e.message || e));

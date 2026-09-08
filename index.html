@@ -6,7 +6,6 @@
 <title>Rifa - Projeto Vida Americana Especial</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 <style>
   :root{
     --bg:#FAF6F1; --card:#FFFFFF; --line:#E7DED4;
@@ -139,8 +138,8 @@
     </select>
     <input id="rBuyerPix" placeholder="Digite a chave Pix">
     <label>Comprovante do Pix</label>
-    <label class="filelabel" id="fileLabel" for="rFile">Toque para anexar imagem ou PDF</label>
-    <input type="file" id="rFile" accept="image/*,application/pdf" style="display:none" onchange="onFileChosen()">
+    <label class="filelabel" id="fileLabel" for="rFile">Toque para anexar foto ou print do comprovante</label>
+    <input type="file" id="rFile" accept="image/*" style="display:none" onchange="onFileChosen()">
     <div class="err hidden" id="rErr">Preencha nome, telefone, aluno(a), tipo e chave Pix, e anexe o comprovante.</div>
     <div style="display:flex;gap:8px;">
       <button class="btn" onclick="confirmReserve()">Reservar</button>
@@ -171,19 +170,19 @@
 <script>
 /* ====== COLE AQUI AS CHAVES DO SEU PROJETO FIREBASE ====== */
 const FIREBASE_CONFIG = {
-  apiKey: "COLE_AQUI",
-  authDomain: "COLE_AQUI",
-  projectId: "COLE_AQUI",
-  storageBucket: "COLE_AQUI",
-  messagingSenderId: "COLE_AQUI",
-  appId: "COLE_AQUI"
+  apiKey: "AIzaSyB6fdIxtATdcLTRgD-87CPuMCrkuAZwfZg",
+  authDomain: "rifa-vida-americana.firebaseapp.com",
+  projectId: "rifa-vida-americana",
+  storageBucket: "rifa-vida-americana.firebasestorage.app",
+  messagingSenderId: "10863330814",
+  appId: "1:10863330814:web:29273019ee19e1bdb66caf"
 };
 /* =========================================================== */
 
 const ADMIN_CODE = "ABRACE2026";
 const ALUNOS = ["Davi Souza Tischenberg","Fabio Henrique De Oliveira Antunes","Gabriel Santos de Barros","Heloísa Costa dos Santos","Matheus Faccioni Cavalcante","Maysa Rezende Brancatti","Rafaela Braga Santos","Vitória Mayse de Noronha Tahara"];
 
-let db, storageRef;
+let db;
 let numbers = {};
 let config = { pixKey: "" };
 let selected = new Set();
@@ -212,7 +211,6 @@ async function initFirebase(){
   }
   firebase.initializeApp(FIREBASE_CONFIG);
   db = firebase.firestore();
-  storageRef = firebase.storage().ref();
 
   const configDoc = db.collection("rifa").doc("config");
   const configSnap = await configDoc.get();
@@ -317,7 +315,7 @@ function openReserve(ks){
   document.getElementById("rBuyerPix").value = "";
   document.getElementById("rBuyerPixType").value = "";
   document.getElementById("rFile").value = "";
-  document.getElementById("fileLabel").textContent = "Toque para anexar imagem ou PDF";
+  document.getElementById("fileLabel").textContent = "Toque para anexar foto ou print do comprovante";
   document.getElementById("rErr").classList.add("hidden");
   renderPixBox(pendingNumbers);
   document.getElementById("reserveOverlay").classList.remove("hidden");
@@ -355,17 +353,43 @@ function compressImage(file, maxDim, quality){
   });
 }
 
-async function uploadComprovante(firstKey){
-  let blob = pendingRawFile;
-  let ext = "pdf";
+function compressImage(file, maxDim, quality){
+  return new Promise((resolve,reject)=>{
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = ()=>{ img.src = reader.result; };
+    reader.onerror = reject;
+    img.onload = ()=>{
+      let w = img.width, h = img.height;
+      if(w > h && w > maxDim){ h = Math.round(h * maxDim / w); w = maxDim; }
+      else if(h > maxDim){ w = Math.round(w * maxDim / h); h = maxDim; }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function prepareComprovante(){
   if(pendingRawFile.type.startsWith("image/")){
-    blob = await compressImage(pendingRawFile, 1400, 0.75);
-    ext = "jpg";
+    const attempts = [
+      {maxDim:900, quality:0.6},
+      {maxDim:700, quality:0.5},
+      {maxDim:550, quality:0.4},
+      {maxDim:400, quality:0.3},
+      {maxDim:300, quality:0.25}
+    ];
+    let result = "";
+    for(const a of attempts){
+      result = await compressImage(pendingRawFile, a.maxDim, a.quality);
+      if(result.length <= 700000) break;
+    }
+    return result;
   }
-  const path = "comprovantes/" + firstKey + "_" + Date.now() + "." + ext;
-  const ref = storageRef.child(path);
-  await ref.put(blob);
-  return await ref.getDownloadURL();
+  throw new Error("Envie uma foto ou print (imagem), PDF não é aceito nesta versão.");
 }
 
 async function confirmReserve(){
@@ -380,11 +404,11 @@ async function confirmReserve(){
   }
   document.getElementById("rErr").classList.add("hidden");
   try{
-    const url = await uploadComprovante(pendingNumbers[0]);
+    const comprovante = await prepareComprovante();
     const numbersCol = db.collection("rifa").doc("data").collection("numbers");
     const batch = db.batch();
     pendingNumbers.forEach(k=>{
-      batch.set(numbersCol.doc(k), { status:"reservado", nome:name, telefone:phone, aluno:aluno, pix:buyerPix, pixType:buyerPixType, comprovanteUrl:url });
+      batch.set(numbersCol.doc(k), { status:"reservado", nome:name, telefone:phone, aluno:aluno, pix:buyerPix, pixType:buyerPixType, comprovante:comprovante });
     });
     await batch.commit();
     selected.clear();
@@ -422,13 +446,11 @@ function renderAdminList(){
     info.className = "admin-info";
     info.innerHTML = "<div><b>"+k+"</b> - "+(n.nome||"")+"</div><div class='m'>"+(n.telefone||"")+" &middot; vendido por "+(n.aluno||"-")+"</div><div class='m'>Pix p/ prêmio ("+(n.pixType||"-")+"): "+(n.pix||"-")+"</div>";
     row.appendChild(info);
-    if(n.comprovanteUrl){
-      const el = document.createElement("span");
-      el.textContent = "Ver comprovante";
-      el.style.fontSize = "12px";
-      el.style.color = "var(--coral)";
-      el.style.cursor = "pointer";
-      el.onclick = ()=>showProof(n.comprovanteUrl);
+    if(n.comprovante){
+      const el = document.createElement("img");
+      el.className = "thumb";
+      el.src = n.comprovante;
+      el.onclick = ()=>showProof(n.comprovante);
       row.appendChild(el);
     }
     const select = document.createElement("select");
@@ -448,13 +470,8 @@ function renderAdminList(){
   });
 }
 
-function showProof(url){
-  const content = document.getElementById("proofContent");
-  if(url.match(/\.(jpg|jpeg|png)(\?|$)/i) || url.includes("image")){
-    content.innerHTML = "<img src='"+url+"' style='max-width:100%;border-radius:8px;'>";
-  }else{
-    content.innerHTML = "<a href='"+url+"' target='_blank' style='color:var(--coral)'>Abrir arquivo</a>";
-  }
+function showProof(dataUrl){
+  document.getElementById("proofContent").innerHTML = "<img src='"+dataUrl+"' style='max-width:100%;border-radius:8px;'>";
   document.getElementById("proofOverlay").classList.remove("hidden");
 }
 

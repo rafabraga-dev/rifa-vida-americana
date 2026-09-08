@@ -164,11 +164,17 @@
     <input id="pixInput" placeholder="Chave Pix (CPF)">
     <button class="btn small" style="margin-bottom:14px;" onclick="savePix()">Salvar chave Pix</button>
     <div style="display:flex;gap:6px;margin-bottom:10px;">
+      <button class="btn small secondary" id="tabCompras" onclick="setAdminTab('compras')">Compras</button>
       <button class="btn small secondary" id="tabReservado" onclick="setAdminTab('reservado')">Reservados</button>
       <button class="btn small secondary" id="tabPago" onclick="setAdminTab('pago')">Pagos</button>
       <button class="btn small secondary" id="tabHistorico" onclick="setAdminTab('historico')">Liberações</button>
     </div>
     <div id="adminList" style="max-height:320px;overflow:auto;"></div>
+    <div id="bulkBar" class="hidden" style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;align-items:center;">
+      <span id="bulkCount" style="font-size:12px;color:var(--muted);"></span>
+      <button class="btn small secondary" onclick="marcarSelecionadosComoPago()">Marcar como pago</button>
+      <button class="btn small secondary" onclick="liberarSelecionados()">Liberar selecionados</button>
+    </div>
     <button class="btn secondary" style="margin-top:12px;" onclick="closeOverlay('adminOverlay')">Fechar</button>
   </div>
 </div>
@@ -238,6 +244,7 @@ let selected = new Set();
 let pendingNumbers = [];
 let pendingRawFile = null;
 let adminTab = "reservado";
+let selectedAdmin = new Set();
 let editingKey = null;
 
 function abrirEdicao(k){
@@ -258,9 +265,11 @@ async function salvarEdicao(){
   const aluno = document.getElementById("eAluno").value;
   const pixType = document.getElementById("ePixType").value;
   const pix = document.getElementById("ePix").value.trim();
-  await db.collection("rifa").doc("data").collection("numbers").doc(editingKey).update({
-    nome, telefone, aluno, pixType, pix
-  });
+  const grupo = siblingsOf(editingKey);
+  const numbersCol = db.collection("rifa").doc("data").collection("numbers");
+  const batch = db.batch();
+  grupo.forEach(k=>batch.update(numbersCol.doc(k), { nome, telefone, aluno, pixType, pix }));
+  await batch.commit();
   closeOverlay("editOverlay");
   renderAdminList();
 }
@@ -497,14 +506,14 @@ function openAdmin(){
     return;
   }
   document.getElementById("pixInput").value = config.pixKey || "";
-  setAdminTab("reservado");
+  setAdminTab("compras");
   document.getElementById("adminOverlay").classList.remove("hidden");
 }
 
 function setAdminTab(tab){
   adminTab = tab;
-  ["tabReservado","tabPago","tabHistorico"].forEach(id=>document.getElementById(id).style.background = "");
-  const map = { reservado:"tabReservado", pago:"tabPago", historico:"tabHistorico" };
+  ["tabCompras","tabReservado","tabPago","tabHistorico"].forEach(id=>document.getElementById(id).style.background = "");
+  const map = { compras:"tabCompras", reservado:"tabReservado", pago:"tabPago", historico:"tabHistorico" };
   document.getElementById(map[tab]).style.background = "var(--coral-light)";
   renderAdminList();
 }
@@ -524,8 +533,15 @@ function parseDateBR(str){
 
 function renderAdminList(){
   const list = document.getElementById("adminList");
+  selectedAdmin.clear();
+  updateBulkBar();
   if(adminTab === "historico"){
+    document.getElementById("bulkBar").classList.add("hidden");
     renderHistoricoTab(list);
+    return;
+  }
+  if(adminTab === "compras"){
+    renderComprasTab(list);
     return;
   }
   const entries = Object.keys(numbers)
@@ -544,6 +560,17 @@ function renderAdminList(){
     const n = numbers[k];
     const row = document.createElement("div");
     row.className = "admin-row";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.style.width = "auto";
+    checkbox.style.marginTop = "4px";
+    checkbox.onchange = ()=>{
+      if(checkbox.checked) selectedAdmin.add(k); else selectedAdmin.delete(k);
+      updateBulkBar();
+    };
+    row.appendChild(checkbox);
+
     const info = document.createElement("div");
     info.className = "admin-info";
     const grupo = siblingsOf(k).filter(x=>x!==k);
@@ -572,11 +599,7 @@ function renderAdminList(){
       select.appendChild(opt);
     });
     select.onchange = async ()=>{
-      const grupo = siblingsOf(k);
-      const numbersCol = db.collection("rifa").doc("data").collection("numbers");
-      const batch = db.batch();
-      grupo.forEach(gk=>batch.update(numbersCol.doc(gk), { status: select.value }));
-      await batch.commit();
+      await db.collection("rifa").doc("data").collection("numbers").doc(k).update({ status: select.value });
     };
     row.appendChild(select);
 
@@ -603,38 +626,155 @@ function renderAdminList(){
   });
 }
 
-function defaultNumberDoc(){
-  return { status:"disponivel", nome:"", telefone:"", aluno:"", pix:"", pixType:"", comprovante:"", dataCompra:"", timestamp:0, grupoId:"" };
+function renderComprasTab(list){
+  const keys = Object.keys(numbers).filter(k=>numbers[k].status !== "disponivel");
+  const grupos = {};
+  keys.forEach(k=>{
+    const gid = numbers[k].grupoId || ("solo_"+k);
+    if(!grupos[gid]) grupos[gid] = [];
+    grupos[gid].push(k);
+  });
+  const listaGrupos = Object.values(grupos).sort((a,b)=>{
+    const ta = numbers[a[0]].timestamp || parseDateBR(numbers[a[0]].dataCompra);
+    const tb = numbers[b[0]].timestamp || parseDateBR(numbers[b[0]].dataCompra);
+    return ta - tb;
+  });
+  list.innerHTML = "";
+  if(listaGrupos.length === 0){
+    list.innerHTML = "<p style='font-size:13px;color:var(--muted)'>Nenhuma compra ainda.</p>";
+    return;
+  }
+  listaGrupos.forEach(nums=>{
+    nums.sort();
+    const first = numbers[nums[0]];
+    const total = (nums.length * 13).toFixed(2).replace(".",",");
+    const pagos = nums.filter(x=>numbers[x].status==="pago").length;
+    const row = document.createElement("div");
+    row.className = "admin-row";
+    row.style.flexDirection = "column";
+    row.style.alignItems = "stretch";
+
+    const header = document.createElement("div");
+    header.className = "admin-info";
+    header.innerHTML = "<div><b>"+(first.nome||"-")+"</b></div>"
+      + "<div class='m'>Telefone: "+(first.telefone||"-")+" &middot; Vendido por: "+(first.aluno||"-")+"</div>"
+      + "<div class='m'>Números: "+nums.join(", ")+" ("+nums.length+")</div>"
+      + "<div class='m'><b>Valor total a conferir: R$ "+total+"</b> &middot; "+pagos+"/"+nums.length+" já marcados como pago</div>"
+      + "<div class='m muted'>Comprado em: "+(first.dataCompra||"-")+"</div>";
+    row.appendChild(header);
+
+    const numsRow = document.createElement("div");
+    numsRow.style.display = "flex";
+    numsRow.style.gap = "8px";
+    numsRow.style.flexWrap = "wrap";
+    numsRow.style.margin = "8px 0";
+    nums.forEach(k=>{
+      const n = numbers[k];
+      const chip = document.createElement("label");
+      chip.style.display = "flex";
+      chip.style.alignItems = "center";
+      chip.style.gap = "4px";
+      chip.style.fontSize = "12px";
+      chip.style.padding = "4px 8px";
+      chip.style.border = "1px solid var(--line)";
+      chip.style.borderRadius = "6px";
+      chip.style.background = n.status === "pago" ? "var(--teal-light)" : "var(--amber-light)";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.style.width = "auto";
+      cb.onchange = ()=>{
+        if(cb.checked) selectedAdmin.add(k); else selectedAdmin.delete(k);
+        updateBulkBar();
+      };
+      chip.appendChild(cb);
+      chip.appendChild(document.createTextNode(k + " (" + n.status + ")"));
+      numsRow.appendChild(chip);
+    });
+    row.appendChild(numsRow);
+
+    if(first.comprovante){
+      const el = document.createElement("img");
+      el.className = "thumb";
+      el.src = first.comprovante;
+      el.style.marginBottom = "8px";
+      el.onclick = ()=>showProof(first.comprovante);
+      row.appendChild(el);
+    }
+
+    const editarBtn = document.createElement("button");
+    editarBtn.className = "btn small secondary";
+    editarBtn.textContent = "Editar dados";
+    editarBtn.style.alignSelf = "flex-start";
+    editarBtn.onclick = ()=>abrirEdicao(nums[0]);
+    row.appendChild(editarBtn);
+
+    list.appendChild(row);
+  });
 }
 
-async function liberarNumero(k){
-  const grupo = siblingsOf(k);
-  const justificativa = prompt("Por que o(s) número(s) " + grupo.join(", ") + " está(ão) sendo liberado(s)? (ex: não pagou em 48h)");
+function updateBulkBar(){
+  const bar = document.getElementById("bulkBar");
+  if(adminTab === "historico" || selectedAdmin.size === 0){
+    bar.classList.add("hidden");
+    return;
+  }
+  bar.classList.remove("hidden");
+  document.getElementById("bulkCount").textContent = selectedAdmin.size + " selecionado(s)";
+}
+
+async function marcarSelecionadosComoPago(){
+  if(selectedAdmin.size === 0) return;
+  const numbersCol = db.collection("rifa").doc("data").collection("numbers");
+  const batch = db.batch();
+  selectedAdmin.forEach(k=>batch.update(numbersCol.doc(k), { status: "pago" }));
+  await batch.commit();
+  renderAdminList();
+}
+
+async function liberarSelecionados(){
+  if(selectedAdmin.size === 0) return;
+  const lista = Array.from(selectedAdmin);
+  const justificativa = prompt("Por que o(s) número(s) " + lista.join(", ") + " está(ão) sendo liberado(s)? (ex: não pagou em 48h)");
   if(justificativa === null) return;
   const historicoCol = db.collection("rifa").doc("data").collection("historico");
   const numbersCol = db.collection("rifa").doc("data").collection("numbers");
-  await Promise.all(grupo.map(gk=>{
-    const n = numbers[gk];
+  await Promise.all(lista.map(k=>{
+    const n = numbers[k];
     return historicoCol.add({
-      numero: gk, nome: n.nome||"", telefone: n.telefone||"", aluno: n.aluno||"",
+      numero: k, nome: n.nome||"", telefone: n.telefone||"", aluno: n.aluno||"",
       pix: n.pix||"", pixType: n.pixType||"", dataCompra: n.dataCompra||"", comprovante: n.comprovante||"",
       statusAnterior: n.status||"reservado", justificativa: justificativa.trim(),
       motivo: "nao_pago", liberadoEm: new Date().toLocaleString("pt-BR"), liberadoTimestamp: Date.now()
     });
   }));
   const batch = db.batch();
-  grupo.forEach(gk=>batch.set(numbersCol.doc(gk), defaultNumberDoc()));
+  lista.forEach(k=>batch.set(numbersCol.doc(k), defaultNumberDoc()));
   await batch.commit();
   renderAdminList();
 }
 
+function defaultNumberDoc(){
+  return { status:"disponivel", nome:"", telefone:"", aluno:"", pix:"", pixType:"", comprovante:"", dataCompra:"", timestamp:0, grupoId:"" };
+}
+
+async function liberarNumero(k){
+  const n = numbers[k];
+  const justificativa = prompt("Por que o número " + k + " está sendo liberado? (ex: não pagou em 48h)");
+  if(justificativa === null) return;
+  const historicoCol = db.collection("rifa").doc("data").collection("historico");
+  await historicoCol.add({
+    numero: k, nome: n.nome||"", telefone: n.telefone||"", aluno: n.aluno||"",
+    pix: n.pix||"", pixType: n.pixType||"", dataCompra: n.dataCompra||"", comprovante: n.comprovante||"",
+    statusAnterior: n.status||"reservado", justificativa: justificativa.trim(),
+    motivo: "nao_pago", liberadoEm: new Date().toLocaleString("pt-BR"), liberadoTimestamp: Date.now()
+  });
+  await db.collection("rifa").doc("data").collection("numbers").doc(k).set(defaultNumberDoc());
+  renderAdminList();
+}
+
 async function excluirTeste(k){
-  const grupo = siblingsOf(k);
-  if(!confirm("Excluir o teste do(s) número(s) " + grupo.join(", ") + " sem guardar histórico?")) return;
-  const numbersCol = db.collection("rifa").doc("data").collection("numbers");
-  const batch = db.batch();
-  grupo.forEach(gk=>batch.set(numbersCol.doc(gk), defaultNumberDoc()));
-  await batch.commit();
+  if(!confirm("Excluir o teste do número " + k + " sem guardar histórico?")) return;
+  await db.collection("rifa").doc("data").collection("numbers").doc(k).set(defaultNumberDoc());
   renderAdminList();
 }
 

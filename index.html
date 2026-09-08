@@ -104,7 +104,7 @@
 <div class="overlay hidden" id="reserveOverlay">
   <div class="modal">
     <h3 id="reserveTitle">Reservar número</h3>
-    <p>Pague o Pix abaixo (valor já somado para os números escolhidos), depois preencha os dados e anexe o comprovante.</p>
+    <p>Pague o Pix abaixo (valor já somado para os números escolhidos) e preencha os dados. Sua reserva será analisada; assim que o Pix cair na conta, em até 48h o número aparece no site como "Pago".</p>
 
     <div class="pix-box" id="pixBox">
       <span style="font-size:12px;color:var(--muted);">Chave Pix (CPF)</span>
@@ -137,10 +137,10 @@
       <option value="Telefone">Telefone</option>
     </select>
     <input id="rBuyerPix" placeholder="Digite a chave Pix">
-    <label>Comprovante do Pix</label>
+    <label>Comprovante do Pix (opcional)</label>
     <label class="filelabel" id="fileLabel" for="rFile">Toque para anexar foto ou print do comprovante</label>
     <input type="file" id="rFile" accept="image/*" style="display:none" onchange="onFileChosen()">
-    <div class="err hidden" id="rErr">Preencha nome, telefone, aluno(a), tipo e chave Pix, e anexe o comprovante.</div>
+    <div class="err hidden" id="rErr">Preencha nome, telefone, aluno(a), tipo e chave Pix.</div>
     <div style="display:flex;gap:8px;">
       <button class="btn" onclick="confirmReserve()">Reservar</button>
       <button class="btn secondary" onclick="closeOverlay('reserveOverlay')">Cancelar</button>
@@ -374,6 +374,7 @@ function compressImage(file, maxDim, quality){
 }
 
 async function prepareComprovante(){
+  if(!pendingRawFile) return "";
   if(pendingRawFile.type.startsWith("image/")){
     const attempts = [
       {maxDim:900, quality:0.6},
@@ -398,21 +399,23 @@ async function confirmReserve(){
   const aluno = document.getElementById("rAluno").value;
   const buyerPix = document.getElementById("rBuyerPix").value.trim();
   const buyerPixType = document.getElementById("rBuyerPixType").value;
-  if(!name || !phone || !aluno || !buyerPix || !buyerPixType || !pendingRawFile){
+  if(!name || !phone || !aluno || !buyerPix || !buyerPixType){
     document.getElementById("rErr").classList.remove("hidden");
     return;
   }
   document.getElementById("rErr").classList.add("hidden");
   try{
     const comprovante = await prepareComprovante();
+    const dataCompra = new Date().toLocaleString("pt-BR");
     const numbersCol = db.collection("rifa").doc("data").collection("numbers");
     const batch = db.batch();
     pendingNumbers.forEach(k=>{
-      batch.set(numbersCol.doc(k), { status:"reservado", nome:name, telefone:phone, aluno:aluno, pix:buyerPix, pixType:buyerPixType, comprovante:comprovante });
+      batch.set(numbersCol.doc(k), { status:"reservado", nome:name, telefone:phone, aluno:aluno, pix:buyerPix, pixType:buyerPixType, comprovante:comprovante, dataCompra:dataCompra });
     });
     await batch.commit();
     selected.clear();
     closeOverlay("reserveOverlay");
+    alert("Reserva feita! Sua compra será analisada e, assim que o Pix cair na conta, em até 48h o número aparece no site como \"Pago\".");
   }catch(e){
     console.error(e);
     alert("Não deu para salvar: " + (e.message || e));
@@ -444,7 +447,7 @@ function renderAdminList(){
     row.className = "admin-row";
     const info = document.createElement("div");
     info.className = "admin-info";
-    info.innerHTML = "<div><b>"+k+"</b> - "+(n.nome||"")+"</div><div class='m'>"+(n.telefone||"")+" &middot; vendido por "+(n.aluno||"-")+"</div><div class='m'>Pix p/ prêmio ("+(n.pixType||"-")+"): "+(n.pix||"-")+"</div>";
+    info.innerHTML = "<div><b>"+k+"</b> - "+(n.nome||"")+"</div><div class='m'>"+(n.telefone||"")+" &middot; vendido por "+(n.aluno||"-")+"</div><div class='m'>Pix p/ prêmio ("+(n.pixType||"-")+"): "+(n.pix||"-")+"</div><div class='m'>Comprado em: "+(n.dataCompra||"-")+"</div>";
     row.appendChild(info);
     if(n.comprovante){
       const el = document.createElement("img");

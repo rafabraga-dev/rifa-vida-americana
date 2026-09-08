@@ -161,9 +161,12 @@
     <p>Cadastre a chave Pix e confira os comprovantes antes de confirmar.</p>
     <input id="pixInput" placeholder="Chave Pix (CPF)">
     <button class="btn small" style="margin-bottom:14px;" onclick="savePix()">Salvar chave Pix</button>
-    <div id="adminList" style="max-height:300px;overflow:auto;"></div>
-    <button class="btn secondary small" style="margin-top:10px;" onclick="toggleHistorico()">Ver histórico de liberações</button>
-    <div id="historicoList" class="hidden" style="max-height:220px;overflow:auto;margin-top:10px;"></div>
+    <div style="display:flex;gap:6px;margin-bottom:10px;">
+      <button class="btn small secondary" id="tabReservado" onclick="setAdminTab('reservado')">Reservados</button>
+      <button class="btn small secondary" id="tabPago" onclick="setAdminTab('pago')">Pagos</button>
+      <button class="btn small secondary" id="tabHistorico" onclick="setAdminTab('historico')">Liberações</button>
+    </div>
+    <div id="adminList" style="max-height:320px;overflow:auto;"></div>
     <button class="btn secondary" style="margin-top:12px;" onclick="closeOverlay('adminOverlay')">Fechar</button>
   </div>
 </div>
@@ -188,7 +191,7 @@ const FIREBASE_CONFIG = {
 };
 /* =========================================================== */
 
-const ADMIN_CODE = "ABRACE2026";
+const ADMIN_CODE = "38283374";
 const ALUNOS = ["Davi Souza Tischenberg","Fabio Henrique De Oliveira Antunes","Gabriel Santos de Barros","Heloísa Costa dos Santos","Matheus Faccioni Cavalcante","Maysa Rezende Brancatti","Rafaela Braga Santos","Vitória Mayse de Noronha Tahara"];
 
 let db;
@@ -197,6 +200,7 @@ let config = { pixKey: "" };
 let selected = new Set();
 let pendingNumbers = [];
 let pendingRawFile = null;
+let adminTab = "reservado";
 
 function isConfigured(){
   return FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== "COLE_AQUI";
@@ -417,11 +421,13 @@ async function confirmReserve(){
   document.getElementById("rErr").classList.add("hidden");
   try{
     const comprovante = await prepareComprovante();
-    const dataCompra = new Date().toLocaleString("pt-BR");
+    const agora = new Date();
+    const dataCompra = agora.toLocaleString("pt-BR");
+    const timestamp = agora.getTime();
     const numbersCol = db.collection("rifa").doc("data").collection("numbers");
     const batch = db.batch();
     pendingNumbers.forEach(k=>{
-      batch.set(numbersCol.doc(k), { status:"reservado", nome:name, telefone:phone, aluno:aluno, pix:buyerPix, pixType:buyerPixType, comprovante:comprovante, dataCompra:dataCompra });
+      batch.set(numbersCol.doc(k), { status:"reservado", nome:name, telefone:phone, aluno:aluno, pix:buyerPix, pixType:buyerPixType, comprovante:comprovante, dataCompra:dataCompra, timestamp:timestamp });
     });
     await batch.commit();
     selected.clear();
@@ -440,16 +446,41 @@ function openAdmin(){
     return;
   }
   document.getElementById("pixInput").value = config.pixKey || "";
-  renderAdminList();
+  setAdminTab("reservado");
   document.getElementById("adminOverlay").classList.remove("hidden");
+}
+
+function setAdminTab(tab){
+  adminTab = tab;
+  ["tabReservado","tabPago","tabHistorico"].forEach(id=>document.getElementById(id).style.background = "");
+  const map = { reservado:"tabReservado", pago:"tabPago", historico:"tabHistorico" };
+  document.getElementById(map[tab]).style.background = "var(--coral-light)";
+  renderAdminList();
+}
+
+function parseDateBR(str){
+  if(!str) return 0;
+  const m = str.match(/(\d{2})\/(\d{2})\/(\d{4}),?\s*(\d{2}):(\d{2}):(\d{2})/);
+  if(!m) return 0;
+  return new Date(+m[3], +m[2]-1, +m[1], +m[4], +m[5], +m[6]).getTime();
 }
 
 function renderAdminList(){
   const list = document.getElementById("adminList");
-  const entries = Object.keys(numbers).sort().filter(k=>numbers[k].status !== "disponivel");
+  if(adminTab === "historico"){
+    renderHistoricoTab(list);
+    return;
+  }
+  const entries = Object.keys(numbers)
+    .filter(k=>numbers[k].status === adminTab)
+    .sort((a,b)=>{
+      const ta = numbers[a].timestamp || parseDateBR(numbers[a].dataCompra);
+      const tb = numbers[b].timestamp || parseDateBR(numbers[b].dataCompra);
+      return ta - tb;
+    });
   list.innerHTML = "";
   if(entries.length === 0){
-    list.innerHTML = "<p style='font-size:13px;color:var(--muted)'>Nenhuma reserva ainda.</p>";
+    list.innerHTML = "<p style='font-size:13px;color:var(--muted)'>Nada por aqui ainda.</p>";
     return;
   }
   entries.forEach(k=>{
@@ -499,7 +530,7 @@ function renderAdminList(){
 }
 
 function defaultNumberDoc(){
-  return { status:"disponivel", nome:"", telefone:"", aluno:"", pix:"", pixType:"", comprovante:"", dataCompra:"" };
+  return { status:"disponivel", nome:"", telefone:"", aluno:"", pix:"", pixType:"", comprovante:"", dataCompra:"", timestamp:0 };
 }
 
 async function liberarNumero(k){
@@ -510,7 +541,7 @@ async function liberarNumero(k){
     numero: k, nome: n.nome||"", telefone: n.telefone||"", aluno: n.aluno||"",
     pix: n.pix||"", pixType: n.pixType||"", dataCompra: n.dataCompra||"", comprovante: n.comprovante||"",
     statusAnterior: n.status||"reservado",
-    motivo: "nao_pago", liberadoEm: new Date().toLocaleString("pt-BR")
+    motivo: "nao_pago", liberadoEm: new Date().toLocaleString("pt-BR"), liberadoTimestamp: Date.now()
   });
   await db.collection("rifa").doc("data").collection("numbers").doc(k).set(defaultNumberDoc());
   renderAdminList();
@@ -523,39 +554,43 @@ async function excluirTeste(k){
 }
 
 async function restaurarHistorico(docId, h){
+  const atual = numbers[h.numero];
+  if(atual && atual.status !== "disponivel"){
+    alert("Não dá para restaurar: o número " + h.numero + " já está " + atual.status + " para " + (atual.nome||"outra pessoa") + ". Libere ou resolva essa reserva atual primeiro.");
+    return;
+  }
   if(!confirm("Restaurar o número " + h.numero + " com os dados de " + (h.nome||"") + "?")) return;
   await db.collection("rifa").doc("data").collection("numbers").doc(h.numero).set({
     status: h.statusAnterior || "reservado", nome: h.nome||"", telefone: h.telefone||"",
-    aluno: h.aluno||"", pix: h.pix||"", pixType: h.pixType||"", dataCompra: h.dataCompra||"", comprovante: h.comprovante||""
+    aluno: h.aluno||"", pix: h.pix||"", pixType: h.pixType||"", dataCompra: h.dataCompra||"",
+    comprovante: h.comprovante||"", timestamp: parseDateBR(h.dataCompra)
   });
   await db.collection("rifa").doc("data").collection("historico").doc(docId).delete();
-  toggleHistorico();
-  toggleHistorico();
+  renderAdminList();
 }
 
 async function excluirHistorico(docId){
   if(!confirm("Excluir esse registro do histórico? Isso não afeta o número no site.")) return;
   await db.collection("rifa").doc("data").collection("historico").doc(docId).delete();
-  toggleHistorico();
-  toggleHistorico();
+  renderAdminList();
 }
 
-async function toggleHistorico(){
-  const box = document.getElementById("historicoList");
-  if(!box.classList.contains("hidden")){
-    box.classList.add("hidden");
-    return;
-  }
-  box.classList.remove("hidden");
+async function renderHistoricoTab(box){
   box.innerHTML = "<p style='font-size:13px;color:var(--muted)'>Carregando...</p>";
   const snap = await db.collection("rifa").doc("data").collection("historico").get();
   if(snap.empty){
     box.innerHTML = "<p style='font-size:13px;color:var(--muted)'>Nenhuma liberação registrada.</p>";
     return;
   }
+  const docs = [];
+  snap.forEach(doc=>docs.push({ id: doc.id, data: doc.data() }));
+  docs.sort((a,b)=>{
+    const ta = a.data.liberadoTimestamp || parseDateBR(a.data.dataCompra);
+    const tb = b.data.liberadoTimestamp || parseDateBR(b.data.dataCompra);
+    return ta - tb;
+  });
   box.innerHTML = "";
-  snap.forEach(doc=>{
-    const h = doc.data();
+  docs.forEach(({id, data:h})=>{
     const row = document.createElement("div");
     row.className = "admin-row";
     const info = document.createElement("div");
@@ -565,12 +600,12 @@ async function toggleHistorico(){
     const restaurarBtn = document.createElement("button");
     restaurarBtn.className = "btn small secondary";
     restaurarBtn.textContent = "Restaurar";
-    restaurarBtn.onclick = ()=>restaurarHistorico(doc.id, h);
+    restaurarBtn.onclick = ()=>restaurarHistorico(id, h);
     row.appendChild(restaurarBtn);
     const excluirBtn = document.createElement("button");
     excluirBtn.className = "btn small secondary";
     excluirBtn.textContent = "Excluir";
-    excluirBtn.onclick = ()=>excluirHistorico(doc.id);
+    excluirBtn.onclick = ()=>excluirHistorico(id);
     row.appendChild(excluirBtn);
     box.appendChild(row);
   });

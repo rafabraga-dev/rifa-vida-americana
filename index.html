@@ -485,4 +485,77 @@ function renderAdminList(){
     liberarBtn.className = "btn small secondary";
     liberarBtn.textContent = "Liberar";
     liberarBtn.title = "Marca como não pago, guarda no histórico e libera o número";
-    liberarBtn.onclick = ()=>liberarNum
+    liberarBtn.onclick = ()=>liberarNumero(k);
+    row.appendChild(liberarBtn);
+
+    const excluirBtn = document.createElement("button");
+    excluirBtn.className = "btn small secondary";
+    excluirBtn.textContent = "Excluir teste";
+    excluirBtn.title = "Apaga sem guardar histórico - use só para testes";
+    excluirBtn.onclick = ()=>excluirTeste(k);
+    row.appendChild(excluirBtn);
+    list.appendChild(row);
+  });
+}
+
+function defaultNumberDoc(){
+  return { status:"disponivel", nome:"", telefone:"", aluno:"", pix:"", pixType:"", comprovante:"", dataCompra:"" };
+}
+
+async function liberarNumero(k){
+  const n = numbers[k];
+  if(!confirm("Liberar o número " + k + "? Isso guarda os dados no histórico (não pago) e deixa o número disponível de novo.")) return;
+  const historicoCol = db.collection("rifa").doc("data").collection("historico");
+  await historicoCol.add({
+    numero: k, nome: n.nome||"", telefone: n.telefone||"", aluno: n.aluno||"",
+    pix: n.pix||"", pixType: n.pixType||"", dataCompra: n.dataCompra||"",
+    motivo: "nao_pago", liberadoEm: new Date().toLocaleString("pt-BR")
+  });
+  await db.collection("rifa").doc("data").collection("numbers").doc(k).set(defaultNumberDoc());
+  renderAdminList();
+}
+
+async function excluirTeste(k){
+  if(!confirm("Excluir o teste do número " + k + " sem guardar histórico?")) return;
+  await db.collection("rifa").doc("data").collection("numbers").doc(k).set(defaultNumberDoc());
+  renderAdminList();
+}
+
+async function toggleHistorico(){
+  const box = document.getElementById("historicoList");
+  if(!box.classList.contains("hidden")){
+    box.classList.add("hidden");
+    return;
+  }
+  box.classList.remove("hidden");
+  box.innerHTML = "<p style='font-size:13px;color:var(--muted)'>Carregando...</p>";
+  const snap = await db.collection("rifa").doc("data").collection("historico").get();
+  if(snap.empty){
+    box.innerHTML = "<p style='font-size:13px;color:var(--muted)'>Nenhuma liberação registrada.</p>";
+    return;
+  }
+  box.innerHTML = "";
+  snap.forEach(doc=>{
+    const h = doc.data();
+    const row = document.createElement("div");
+    row.className = "admin-row";
+    row.innerHTML = "<div class='admin-info'><div><b>"+h.numero+"</b> - "+(h.nome||"")+"</div><div class='m'>"+(h.telefone||"")+" &middot; vendido por "+(h.aluno||"-")+"</div><div class='m'>Comprado em: "+(h.dataCompra||"-")+" &middot; Liberado em: "+(h.liberadoEm||"-")+"</div></div>";
+    box.appendChild(row);
+  });
+}
+
+function showProof(dataUrl){
+  document.getElementById("proofContent").innerHTML = "<img src='"+dataUrl+"' style='max-width:100%;border-radius:8px;'>";
+  document.getElementById("proofOverlay").classList.remove("hidden");
+}
+
+async function savePix(){
+  const key = document.getElementById("pixInput").value.trim();
+  await db.collection("rifa").doc("config").set({ pixKey: key }, { merge: true });
+  alert("Chave Pix salva.");
+}
+
+initFirebase();
+</script>
+</body>
+</html>

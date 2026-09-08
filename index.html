@@ -167,7 +167,7 @@
       <button class="btn small secondary" id="tabCompras" onclick="setAdminTab('compras')">Compras</button>
       <button class="btn small secondary" id="tabReservado" onclick="setAdminTab('reservado')">Reservados</button>
       <button class="btn small secondary" id="tabPago" onclick="setAdminTab('pago')">Pagos</button>
-      <button class="btn small secondary" id="tabHistorico" onclick="setAdminTab('historico')">Liberações</button>
+      <button class="btn small secondary" id="tabHistorico" onclick="setAdminTab('historico')">Reservas canceladas</button>
     </div>
     <div id="adminList" style="max-height:320px;overflow:auto;"></div>
     <div id="bulkBar" class="hidden" style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;align-items:center;">
@@ -641,8 +641,21 @@ function renderComprasTab(list){
     return ta - tb;
   });
   list.innerHTML = "";
+
+  const pendentes = listaGrupos.filter(nums=>nums.some(k=>numbers[k].status==="reservado"));
+  const totalPendente = pendentes.reduce((soma,nums)=>soma + nums.filter(k=>numbers[k].status==="reservado").length*13, 0);
+  const resumo = document.createElement("div");
+  resumo.style.background = "var(--amber-light)";
+  resumo.style.borderRadius = "10px";
+  resumo.style.padding = "12px 14px";
+  resumo.style.marginBottom = "12px";
+  resumo.style.fontSize = "14px";
+  resumo.innerHTML = "<b>Total pendente de conferência: R$ "+totalPendente.toFixed(2).replace(".",",")+"</b>"
+    + " &middot; "+pendentes.length+" compra(s) com Pix ainda não confirmado";
+  list.appendChild(resumo);
+
   if(listaGrupos.length === 0){
-    list.innerHTML = "<p style='font-size:13px;color:var(--muted)'>Nenhuma compra ainda.</p>";
+    list.innerHTML += "<p style='font-size:13px;color:var(--muted)'>Nenhuma compra ainda.</p>";
     return;
   }
   listaGrupos.forEach(nums=>{
@@ -650,17 +663,23 @@ function renderComprasTab(list){
     const first = numbers[nums[0]];
     const total = (nums.length * 13).toFixed(2).replace(".",",");
     const pagos = nums.filter(x=>numbers[x].status==="pago").length;
+    const tudoPago = pagos === nums.length;
     const row = document.createElement("div");
     row.className = "admin-row";
     row.style.flexDirection = "column";
     row.style.alignItems = "stretch";
+    row.style.background = tudoPago ? "var(--teal-light)" : "transparent";
+    row.style.borderRadius = "10px";
+    row.style.padding = "12px";
 
     const header = document.createElement("div");
     header.className = "admin-info";
-    header.innerHTML = "<div><b>"+(first.nome||"-")+"</b></div>"
-      + "<div class='m'>Telefone: "+(first.telefone||"-")+" &middot; Vendido por: "+(first.aluno||"-")+"</div>"
-      + "<div class='m'>Números: "+nums.join(", ")+" ("+nums.length+")</div>"
-      + "<div class='m'><b>Valor total a conferir: R$ "+total+"</b> &middot; "+pagos+"/"+nums.length+" já marcados como pago</div>"
+    header.innerHTML = "<div style='font-size:20px;font-weight:600;color:var(--coral-dark);'>R$ "+total+"</div>"
+      + "<div class='m'>"+(tudoPago ? "Pago" : pagos+"/"+nums.length+" números já marcados como pago")+"</div>"
+      + "<div style='margin-top:6px;'><b>"+(first.nome||"-")+"</b></div>"
+      + "<div class='m'>Telefone: "+(first.telefone||"-")+"</div>"
+      + "<div class='m'>Vendido por: "+(first.aluno||"-")+"</div>"
+      + "<div class='m'>Números desta compra: "+nums.join(", ")+"</div>"
       + "<div class='m muted'>Comprado em: "+(first.dataCompra||"-")+"</div>";
     row.appendChild(header);
 
@@ -668,7 +687,7 @@ function renderComprasTab(list){
     numsRow.style.display = "flex";
     numsRow.style.gap = "8px";
     numsRow.style.flexWrap = "wrap";
-    numsRow.style.margin = "8px 0";
+    numsRow.style.margin = "10px 0";
     nums.forEach(k=>{
       const n = numbers[k];
       const chip = document.createElement("label");
@@ -679,7 +698,7 @@ function renderComprasTab(list){
       chip.style.padding = "4px 8px";
       chip.style.border = "1px solid var(--line)";
       chip.style.borderRadius = "6px";
-      chip.style.background = n.status === "pago" ? "var(--teal-light)" : "var(--amber-light)";
+      chip.style.background = n.status === "pago" ? "#fff" : "var(--amber-light)";
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.style.width = "auto";
@@ -840,7 +859,7 @@ async function renderHistoricoTab(box){
   box.innerHTML = "<p style='font-size:13px;color:var(--muted)'>Carregando...</p>";
   const snap = await db.collection("rifa").doc("data").collection("historico").get();
   if(snap.empty){
-    box.innerHTML = "<p style='font-size:13px;color:var(--muted)'>Nenhuma liberação registrada.</p>";
+    box.innerHTML = "<p style='font-size:13px;color:var(--muted)'>Nenhuma reserva cancelada ainda.</p>";
     return;
   }
   const docs = [];
@@ -860,7 +879,7 @@ async function renderHistoricoTab(box){
       + "<div class='m'>Comprador: "+(h.nome||"-")+"</div>"
       + "<div class='m'>Telefone: "+(h.telefone||"-")+"</div>"
       + "<div class='m'>Vendido por: "+(h.aluno||"-")+"</div>"
-      + "<div class='m muted'>Comprado em: "+(h.dataCompra||"-")+" &middot; Liberado em: "+(h.liberadoEm||"-")+"</div>"
+      + "<div class='m muted'>Comprado em: "+(h.dataCompra||"-")+" &middot; Cancelado em: "+(h.liberadoEm||"-")+"</div>"
       + (h.justificativa ? "<div class='m'>Justificativa: "+h.justificativa+"</div>" : "");
     row.appendChild(info);
     const restaurarBtn = document.createElement("button");

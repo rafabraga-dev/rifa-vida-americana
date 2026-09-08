@@ -162,6 +162,8 @@
     <input id="pixInput" placeholder="Chave Pix (CPF)">
     <button class="btn small" style="margin-bottom:14px;" onclick="savePix()">Salvar chave Pix</button>
     <div id="adminList" style="max-height:300px;overflow:auto;"></div>
+    <button class="btn secondary small" style="margin-top:10px;" onclick="toggleHistorico()">Ver histórico de liberações</button>
+    <div id="historicoList" class="hidden" style="max-height:220px;overflow:auto;margin-top:10px;"></div>
     <button class="btn secondary" style="margin-top:12px;" onclick="closeOverlay('adminOverlay')">Fechar</button>
   </div>
 </div>
@@ -478,22 +480,9 @@ function renderAdminList(){
       await db.collection("rifa").doc("data").collection("numbers").doc(k).update({ status: select.value });
     };
     row.appendChild(select);
-    list.appendChild(row);
-  });
-}
 
-function showProof(dataUrl){
-  document.getElementById("proofContent").innerHTML = "<img src='"+dataUrl+"' style='max-width:100%;border-radius:8px;'>";
-  document.getElementById("proofOverlay").classList.remove("hidden");
-}
-
-async function savePix(){
-  const key = document.getElementById("pixInput").value.trim();
-  await db.collection("rifa").doc("config").set({ pixKey: key }, { merge: true });
-  alert("Chave Pix salva.");
-}
-
-initFirebase();
-</script>
-</body>
-</html>
+    const liberarBtn = document.createElement("button");
+    liberarBtn.className = "btn small secondary";
+    liberarBtn.textContent = "Liberar";
+    liberarBtn.title = "Marca como não pago, guarda no histórico e libera o número";
+    liberarBtn.onclick = ()=>liberarNum

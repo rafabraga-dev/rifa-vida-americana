@@ -174,6 +174,7 @@
       <span id="bulkCount" style="font-size:12px;color:var(--muted);"></span>
       <button class="btn small secondary" onclick="marcarSelecionadosComoPago()">Marcar como pago</button>
       <button class="btn small secondary" onclick="liberarSelecionados()">Liberar selecionados</button>
+      <button class="btn small secondary" onclick="agruparSelecionados()">Juntar em uma compra</button>
     </div>
     <button class="btn secondary" style="margin-top:12px;" onclick="closeOverlay('adminOverlay')">Fechar</button>
   </div>
@@ -706,7 +707,18 @@ function renderComprasTab(list){
     editarBtn.textContent = "Editar dados";
     editarBtn.style.alignSelf = "flex-start";
     editarBtn.onclick = ()=>abrirEdicao(nums[0]);
-    row.appendChild(editarBtn);
+    const btnRow = document.createElement("div");
+    btnRow.style.display = "flex";
+    btnRow.style.gap = "8px";
+    btnRow.appendChild(editarBtn);
+
+    const excluirBtn = document.createElement("button");
+    excluirBtn.className = "btn small secondary";
+    excluirBtn.textContent = "Excluir teste";
+    excluirBtn.title = "Apaga essa compra inteira sem guardar histórico - use só para testes";
+    excluirBtn.onclick = ()=>excluirCompraTeste(nums);
+    btnRow.appendChild(excluirBtn);
+    row.appendChild(btnRow);
 
     list.appendChild(row);
   });
@@ -753,6 +765,21 @@ async function liberarSelecionados(){
   renderAdminList();
 }
 
+async function agruparSelecionados(){
+  if(selectedAdmin.size < 2){
+    alert("Selecione pelo menos 2 números pra juntar numa mesma compra.");
+    return;
+  }
+  const lista = Array.from(selectedAdmin);
+  if(!confirm("Juntar os números " + lista.join(", ") + " em uma única compra (mesmo valor total, mesmo Pix a conferir)?")) return;
+  const novoGrupoId = Date.now() + "_" + Math.random().toString(36).slice(2,8);
+  const numbersCol = db.collection("rifa").doc("data").collection("numbers");
+  const batch = db.batch();
+  lista.forEach(k=>batch.update(numbersCol.doc(k), { grupoId: novoGrupoId }));
+  await batch.commit();
+  renderAdminList();
+}
+
 function defaultNumberDoc(){
   return { status:"disponivel", nome:"", telefone:"", aluno:"", pix:"", pixType:"", comprovante:"", dataCompra:"", timestamp:0, grupoId:"" };
 }
@@ -775,6 +802,15 @@ async function liberarNumero(k){
 async function excluirTeste(k){
   if(!confirm("Excluir o teste do número " + k + " sem guardar histórico?")) return;
   await db.collection("rifa").doc("data").collection("numbers").doc(k).set(defaultNumberDoc());
+  renderAdminList();
+}
+
+async function excluirCompraTeste(nums){
+  if(!confirm("Excluir o teste dos números " + nums.join(", ") + " sem guardar histórico?")) return;
+  const numbersCol = db.collection("rifa").doc("data").collection("numbers");
+  const batch = db.batch();
+  nums.forEach(k=>batch.set(numbersCol.doc(k), defaultNumberDoc()));
+  await batch.commit();
   renderAdminList();
 }
 

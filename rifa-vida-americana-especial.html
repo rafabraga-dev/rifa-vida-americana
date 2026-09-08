@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rifa - Projeto Vida Americana Especial</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+<style>
+  :root{
+    --bg:#FAF6F1; --card:#FFFFFF; --line:#E7DED4;
+    --text:#3A2A20; --muted:#8A7A6C;
+    --coral:#D85A30; --coral-dark:#4A1B0C; --coral-light:#F5C4B3;
+    --teal:#0F6E56; --teal-light:#E1F5EE;
+    --amber:#BA7517; --amber-light:#FAEEDA;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
+  .wrap{max-width:760px;margin:0 auto;padding:32px 20px 80px;}
+  h1{font-size:26px;font-weight:600;margin:0 0 4px;color:var(--coral-dark);}
+  .sub{color:var(--muted);margin:0 0 24px;font-size:15px;}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:24px;}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 10px;text-align:center;}
+  .stat .n{font-size:20px;font-weight:600;}
+  .stat .l{font-size:12px;color:var(--muted);}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:20px;}
+  .card h2{font-size:16px;margin:0 0 12px;}
+  .legend{display:flex;gap:16px;font-size:13px;color:var(--muted);margin-bottom:14px;flex-wrap:wrap;}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
+  .grid{display:grid;grid-template-columns:repeat(10,1fr);gap:6px;}
+  .num{aspect-ratio:1;border-radius:8px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:var(--text);}
+  .num.disponivel:hover{border-color:var(--coral);}
+  .num.selecionado{background:var(--coral);color:#fff;border-color:var(--coral);}
+  .num.reservado{background:var(--amber-light);color:#633806;border-color:#EFCB8A;cursor:default;}
+  .num.pago{background:var(--teal-light);color:#085041;border-color:#9FE1CB;cursor:default;}
+  .selection-bar{display:none;align-items:center;justify-content:space-between;gap:12px;background:var(--coral-light);border-radius:10px;padding:12px 14px;margin-top:14px;flex-wrap:wrap;}
+  .selection-bar.show{display:flex;}
+  .selection-bar span{font-size:13px;color:var(--coral-dark);font-weight:500;}
+  .pix-box{background:var(--teal-light);border:1px solid #9FE1CB;border-radius:10px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:6px;margin:10px 0;}
+  button{font-family:inherit;cursor:pointer;}
+  .btn{background:var(--coral);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:500;}
+  .btn.secondary{background:transparent;border:1px solid var(--line);color:var(--text);}
+  .btn.small{padding:6px 10px;font-size:12px;}
+  input,select{font-family:inherit;font-size:14px;padding:9px 10px;border-radius:8px;border:1px solid var(--line);width:100%;margin-bottom:10px;background:#fff;color:var(--text);}
+  label{font-size:12px;color:var(--muted);display:block;margin:0 0 4px;}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;padding:20px;z-index:10;}
+  .modal{background:#fff;border-radius:14px;padding:22px;max-width:380px;width:100%;max-height:88vh;overflow:auto;}
+  .modal h3{margin:0 0 4px;font-size:17px;}
+  .modal p{margin:0 0 14px;font-size:13px;color:var(--muted);}
+  .err{color:#A32D2D;font-size:12px;margin:-6px 0 10px;}
+  .footer-link{text-align:center;margin-top:10px;}
+  .footer-link a{font-size:12px;color:var(--muted);cursor:pointer;}
+  .admin-row{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px;flex-wrap:wrap;}
+  .admin-row:last-child{border-bottom:none;}
+  .admin-info{flex:1;min-width:140px;}
+  .admin-info .m{font-size:11px;color:var(--muted);}
+  .hidden{display:none;}
+  .thumb{width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:pointer;}
+  .filelabel{display:block;font-size:13px;border:1px dashed var(--line);border-radius:8px;padding:10px;text-align:center;color:var(--muted);margin-bottom:6px;cursor:pointer;}
+  .setup-warning{background:#FCEBEB;border:1px solid #F09595;color:#791F1F;border-radius:10px;padding:14px;font-size:13px;margin-bottom:16px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Rifa beneficente</h1>
+  <p class="sub">Projeto Vida Americana Especial &middot; prêmio de R$ 300,00 &middot; número por R$ 13,00</p>
+
+  <div id="setupWarning" class="setup-warning hidden">
+    Configuração do Firebase ainda não preenchida no código (procure FIREBASE_CONFIG no início do arquivo).
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="n" id="stat-disp">-</div><div class="l">Disponíveis</div></div>
+    <div class="stat"><div class="n" id="stat-res">-</div><div class="l">Reservados</div></div>
+    <div class="stat"><div class="n" id="stat-pago">-</div><div class="l">Pagos</div></div>
+  </div>
+
+  <div class="card">
+    <h2>Como pagar</h2>
+    <ol style="font-size:13px;color:var(--muted);margin:0;padding-left:18px;">
+      <li>Selecione um ou mais números disponíveis na lista abaixo.</li>
+      <li>Pague o Pix com o valor já vinculado (R$ 13,00 por número).</li>
+      <li>Preencha seus dados uma única vez e anexe o comprovante para confirmar todos.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Números</h2>
+    <div class="legend">
+      <span><span class="dot" style="background:#fff;border:1px solid var(--line)"></span>Disponível</span>
+      <span><span class="dot" style="background:var(--amber-light);border:1px solid #EFCB8A"></span>Reservado</span>
+      <span><span class="dot" style="background:var(--teal-light);border:1px solid #9FE1CB"></span>Pago</span>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="selection-bar" id="selectionBar">
+      <span id="selectionText">0 números selecionados</span>
+      <button class="btn small" onclick="openReserveMulti()">Continuar</button>
+    </div>
+  </div>
+
+  <div class="footer-link"><a onclick="openAdmin()">Área da equipe</a></div>
+</div>
+
+<div class="overlay hidden" id="reserveOverlay">
+  <div class="modal">
+    <h3 id="reserveTitle">Reservar número</h3>
+    <p>Pague o Pix abaixo (valor já somado para os números escolhidos), depois preencha os dados e anexe o comprovante.</p>
+
+    <div class="pix-box" id="pixBox">
+      <span style="font-size:12px;color:var(--muted);">Chave Pix (CPF)</span>
+      <span id="pixKeyDisplay" style="font-size:17px;font-weight:500;color:#085041;"></span>
+      <span id="pixAmountDisplay" style="font-size:13px;color:var(--muted);"></span>
+      <button class="btn small secondary" onclick="copyPixKeyValue()">Copiar chave</button>
+    </div>
+
+    <label>Seu nome</label>
+    <input id="rName" placeholder="Nome de quem está comprando">
+    <label>Seu telefone (WhatsApp)</label>
+    <input id="rPhone" placeholder="(19) 99999-0000">
+    <label>Aluno(a) pelo qual está comprando</label>
+    <select id="rAluno">
+      <option value="">Selecione</option>
+      <option>Davi Souza Tischenberg</option>
+      <option>Fabio Henrique De Oliveira Antunes</option>
+      <option>Gabriel Santos de Barros</option>
+      <option>Heloísa Costa dos Santos</option>
+      <option>Matheus Faccioni Cavalcante</option>
+      <option>Maysa Rezende Brancatti</option>
+      <option>Rafaela Braga Santos</option>
+      <option>Vitória Mayse de Noronha Tahara</option>
+    </select>
+    <label>Sua chave Pix (para receber o prêmio, caso seja sorteado)</label>
+    <select id="rBuyerPixType">
+      <option value="">Tipo da chave</option>
+      <option value="CPF/CNPJ">CPF/CNPJ</option>
+      <option value="E-mail">E-mail</option>
+      <option value="Telefone">Telefone</option>
+    </select>
+    <input id="rBuyerPix" placeholder="Digite a chave Pix">
+    <label>Comprovante do Pix</label>
+    <label class="filelabel" id="fileLabel" for="rFile">Toque para anexar imagem ou PDF</label>
+    <input type="file" id="rFile" accept="image/*,application/pdf" style="display:none" onchange="onFileChosen()">
+    <div class="err hidden" id="rErr">Preencha nome, telefone, aluno(a), tipo e chave Pix, e anexe o comprovante.</div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn" onclick="confirmReserve()">Reservar</button>
+      <button class="btn secondary" onclick="closeOverlay('reserveOverlay')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="adminOverlay">
+  <div class="modal" style="max-width:460px;">
+    <h3>Área da equipe</h3>
+    <p>Cadastre a chave Pix e confira os comprovantes antes de confirmar.</p>
+    <input id="pixInput" placeholder="Chave Pix (CPF)">
+    <button class="btn small" style="margin-bottom:14px;" onclick="savePix()">Salvar chave Pix</button>
+    <div id="adminList" style="max-height:300px;overflow:auto;"></div>
+    <button class="btn secondary" style="margin-top:12px;" onclick="closeOverlay('adminOverlay')">Fechar</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="proofOverlay">
+  <div class="modal" style="text-align:center;">
+    <h3>Comprovante</h3>
+    <div id="proofContent"></div>
+    <button class="btn secondary" style="margin-top:14px;" onclick="closeOverlay('proofOverlay')">Fechar</button>
+  </div>
+</div>
+
+<script>
+/* ====== COLE AQUI AS CHAVES DO SEU PROJETO FIREBASE ====== */
+const FIREBASE_CONFIG = {
+  apiKey: "COLE_AQUI",
+  authDomain: "COLE_AQUI",
+  projectId: "COLE_AQUI",
+  storageBucket: "COLE_AQUI",
+  messagingSenderId: "COLE_AQUI",
+  appId: "COLE_AQUI"
+};
+/* =========================================================== */
+
+const ADMIN_CODE = "ABRACE2026";
+const ALUNOS = ["Davi Souza Tischenberg","Fabio Henrique De Oliveira Antunes","Gabriel Santos de Barros","Heloísa Costa dos Santos","Matheus Faccioni Cavalcante","Maysa Rezende Brancatti","Rafaela Braga Santos","Vitória Mayse de Noronha Tahara"];
+
+let db, storageRef;
+let numbers = {};
+let config = { pixKey: "" };
+let selected = new Set();
+let pendingNumbers = [];
+let pendingRawFile = null;
+
+function isConfigured(){
+  return FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== "COLE_AQUI";
+}
+
+function defaultNumbers(){
+  const obj = {};
+  for(let i=0;i<100;i++){
+    const k = String(i).padStart(2,"0");
+    obj[k] = { status:"disponivel", nome:"", telefone:"", aluno:"", pix:"", pixType:"", comprovanteUrl:"" };
+  }
+  return obj;
+}
+
+async function initFirebase(){
+  if(!isConfigured()){
+    document.getElementById("setupWarning").classList.remove("hidden");
+    numbers = defaultNumbers();
+    render();
+    return;
+  }
+  firebase.initializeApp(FIREBASE_CONFIG);
+  db = firebase.firestore();
+  storageRef = firebase.storage().ref();
+
+  const configDoc = db.collection("rifa").doc("config");
+  const configSnap = await configDoc.get();
+  if(configSnap.exists){
+    config = configSnap.data();
+  }else{
+    await configDoc.set({ pixKey: "" });
+  }
+
+  const numbersCol = db.collection("rifa").doc("data").collection("numbers");
+  const snap = await numbersCol.get();
+  if(snap.empty){
+    numbers = defaultNumbers();
+    const batch = db.batch();
+    Object.keys(numbers).forEach(k=>{
+      batch.set(numbersCol.doc(k), numbers[k]);
+    });
+    await batch.commit();
+  }else{
+    numbers = {};
+    snap.forEach(doc=>{ numbers[doc.id] = doc.data(); });
+  }
+
+  numbersCol.onSnapshot(snap=>{
+    snap.docChanges().forEach(change=>{
+      numbers[change.doc.id] = change.doc.data();
+    });
+    render();
+  });
+  configDoc.onSnapshot(snap=>{
+    if(snap.exists){ config = snap.data(); }
+    render();
+  });
+
+  render();
+}
+
+function render(){
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+  let disp=0,res=0,pago=0;
+  Object.keys(numbers).sort().forEach(k=>{
+    const n = numbers[k];
+    if(n.status==="disponivel") disp++;
+    if(n.status==="reservado") res++;
+    if(n.status==="pago") pago++;
+    const div = document.createElement("div");
+    div.className = "num " + n.status + (n.status==="disponivel" && selected.has(k) ? " selecionado" : "");
+    div.textContent = k;
+    if(n.status==="disponivel"){
+      div.onclick = ()=>toggleSelect(k);
+    }
+    grid.appendChild(div);
+  });
+  document.getElementById("stat-disp").textContent = disp;
+  document.getElementById("stat-res").textContent = res;
+  document.getElementById("stat-pago").textContent = pago;
+  updateSelectionBar();
+}
+
+function toggleSelect(k){
+  if(selected.has(k)) selected.delete(k);
+  else selected.add(k);
+  render();
+}
+
+function updateSelectionBar(){
+  const bar = document.getElementById("selectionBar");
+  const count = selected.size;
+  if(count === 0){ bar.classList.remove("show"); return; }
+  bar.classList.add("show");
+  const total = (count * 13).toFixed(2).replace(".",",");
+  document.getElementById("selectionText").textContent = count + (count===1 ? " número selecionado" : " números selecionados") + " - R$ " + total;
+}
+
+function openReserveMulti(){
+  if(selected.size === 0) return;
+  openReserve(Array.from(selected).sort());
+}
+
+function renderPixBox(ks){
+  const keyEl = document.getElementById("pixKeyDisplay");
+  const amountEl = document.getElementById("pixAmountDisplay");
+  keyEl.textContent = config.pixKey ? config.pixKey : "Chave Pix ainda não cadastrada pela equipe";
+  const total = (ks.length * 13).toFixed(2).replace(".",",");
+  amountEl.textContent = "Valor a pagar: R$ " + total;
+}
+
+function copyPixKeyValue(){
+  if(!config.pixKey) return;
+  navigator.clipboard.writeText(config.pixKey).catch(()=>{});
+}
+
+function openReserve(ks){
+  pendingNumbers = Array.isArray(ks) ? ks : [ks];
+  pendingRawFile = null;
+  const title = pendingNumbers.length === 1 ? "Reservar número " + pendingNumbers[0] : "Reservar números " + pendingNumbers.join(", ");
+  document.getElementById("reserveTitle").textContent = title;
+  document.getElementById("rName").value = "";
+  document.getElementById("rPhone").value = "";
+  document.getElementById("rAluno").value = "";
+  document.getElementById("rBuyerPix").value = "";
+  document.getElementById("rBuyerPixType").value = "";
+  document.getElementById("rFile").value = "";
+  document.getElementById("fileLabel").textContent = "Toque para anexar imagem ou PDF";
+  document.getElementById("rErr").classList.add("hidden");
+  renderPixBox(pendingNumbers);
+  document.getElementById("reserveOverlay").classList.remove("hidden");
+}
+
+function closeOverlay(id){
+  document.getElementById(id).classList.add("hidden");
+  if(id === "reserveOverlay"){ selected.clear(); render(); }
+}
+
+function onFileChosen(){
+  const file = document.getElementById("rFile").files[0];
+  if(!file) return;
+  pendingRawFile = file;
+  document.getElementById("fileLabel").textContent = file.name + " anexado";
+}
+
+function compressImage(file, maxDim, quality){
+  return new Promise((resolve,reject)=>{
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = ()=>{ img.src = reader.result; };
+    reader.onerror = reject;
+    img.onload = ()=>{
+      let w = img.width, h = img.height;
+      if(w > h && w > maxDim){ h = Math.round(h * maxDim / w); w = maxDim; }
+      else if(h > maxDim){ w = Math.round(w * maxDim / h); h = maxDim; }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      canvas.toBlob(blob=>resolve(blob), "image/jpeg", quality);
+    };
+    img.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadComprovante(firstKey){
+  let blob = pendingRawFile;
+  let ext = "pdf";
+  if(pendingRawFile.type.startsWith("image/")){
+    blob = await compressImage(pendingRawFile, 1400, 0.75);
+    ext = "jpg";
+  }
+  const path = "comprovantes/" + firstKey + "_" + Date.now() + "." + ext;
+  const ref = storageRef.child(path);
+  await ref.put(blob);
+  return await ref.getDownloadURL();
+}
+
+async function confirmReserve(){
+  const name = document.getElementById("rName").value.trim();
+  const phone = document.getElementById("rPhone").value.trim();
+  const aluno = document.getElementById("rAluno").value;
+  const buyerPix = document.getElementById("rBuyerPix").value.trim();
+  const buyerPixType = document.getElementById("rBuyerPixType").value;
+  if(!name || !phone || !aluno || !buyerPix || !buyerPixType || !pendingRawFile){
+    document.getElementById("rErr").classList.remove("hidden");
+    return;
+  }
+  document.getElementById("rErr").classList.add("hidden");
+  try{
+    const url = await uploadComprovante(pendingNumbers[0]);
+    const numbersCol = db.collection("rifa").doc("data").collection("numbers");
+    const batch = db.batch();
+    pendingNumbers.forEach(k=>{
+      batch.set(numbersCol.doc(k), { status:"reservado", nome:name, telefone:phone, aluno:aluno, pix:buyerPix, pixType:buyerPixType, comprovanteUrl:url });
+    });
+    await batch.commit();
+    selected.clear();
+    closeOverlay("reserveOverlay");
+  }catch(e){
+    console.error(e);
+    alert("Não deu para salvar: " + (e.message || e));
+  }
+}
+
+function openAdmin(){
+  const code = prompt("Código da equipe:");
+  if(code !== ADMIN_CODE){
+    if(code !== null) alert("Código incorreto.");
+    return;
+  }
+  document.getElementById("pixInput").value = config.pixKey || "";
+  renderAdminList();
+  document.getElementById("adminOverlay").classList.remove("hidden");
+}
+
+function renderAdminList(){
+  const list = document.getElementById("adminList");
+  const entries = Object.keys(numbers).sort().filter(k=>numbers[k].status !== "disponivel");
+  list.innerHTML = "";
+  if(entries.length === 0){
+    list.innerHTML = "<p style='font-size:13px;color:var(--muted)'>Nenhuma reserva ainda.</p>";
+    return;
+  }
+  entries.forEach(k=>{
+    const n = numbers[k];
+    const row = document.createElement("div");
+    row.className = "admin-row";
+    const info = document.createElement("div");
+    info.className = "admin-info";
+    info.innerHTML = "<div><b>"+k+"</b> - "+(n.nome||"")+"</div><div class='m'>"+(n.telefone||"")+" &middot; vendido por "+(n.aluno||"-")+"</div><div class='m'>Pix p/ prêmio ("+(n.pixType||"-")+"): "+(n.pix||"-")+"</div>";
+    row.appendChild(info);
+    if(n.comprovanteUrl){
+      const el = document.createElement("span");
+      el.textContent = "Ver comprovante";
+      el.style.fontSize = "12px";
+      el.style.color = "var(--coral)";
+      el.style.cursor = "pointer";
+      el.onclick = ()=>showProof(n.comprovanteUrl);
+      row.appendChild(el);
+    }
+    const select = document.createElement("select");
+    select.style.width = "120px";
+    select.style.margin = "0";
+    ["reservado","pago"].forEach(s=>{
+      const opt = document.createElement("option");
+      opt.value = s; opt.textContent = s;
+      if(n.status===s) opt.selected = true;
+      select.appendChild(opt);
+    });
+    select.onchange = async ()=>{
+      await db.collection("rifa").doc("data").collection("numbers").doc(k).update({ status: select.value });
+    };
+    row.appendChild(select);
+    list.appendChild(row);
+  });
+}
+
+function showProof(url){
+  const content = document.getElementById("proofContent");
+  if(url.match(/\.(jpg|jpeg|png)(\?|$)/i) || url.includes("image")){
+    content.innerHTML = "<img src='"+url+"' style='max-width:100%;border-radius:8px;'>";
+  }else{
+    content.innerHTML = "<a href='"+url+"' target='_blank' style='color:var(--coral)'>Abrir arquivo</a>";
+  }
+  document.getElementById("proofOverlay").classList.remove("hidden");
+}
+
+async function savePix(){
+  const key = document.getElementById("pixInput").value.trim();
+  await db.collection("rifa").doc("config").set({ pixKey: key }, { merge: true });
+  alert("Chave Pix salva.");
+}
+
+initFirebase();
+</script>
+</body>
+</html>

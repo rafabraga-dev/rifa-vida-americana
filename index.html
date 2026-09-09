@@ -173,7 +173,7 @@
     <div id="bulkBar" class="hidden" style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;align-items:center;">
       <span id="bulkCount" style="font-size:12px;color:var(--muted);"></span>
       <button class="btn small secondary" onclick="marcarSelecionadosComoPago()">Marcar como pago</button>
-      <button class="btn small secondary" onclick="liberarSelecionados()">Liberar selecionados</button>
+      <button class="btn small secondary" onclick="liberarSelecionados()">Cancelar reservas selecionadas</button>
       <button class="btn small secondary" onclick="agruparSelecionados()">Juntar em uma compra</button>
     </div>
     <button class="btn secondary" style="margin-top:12px;" onclick="closeOverlay('adminOverlay')">Fechar</button>
@@ -579,6 +579,7 @@ function renderAdminList(){
       + "<div class='m'>Comprador: "+(n.nome||"-")+"</div>"
       + "<div class='m'>Telefone: "+(n.telefone||"-")+"</div>"
       + "<div class='m'>Vendido por: "+(n.aluno||"-")+"</div>"
+      + "<div class='m'><b>Valor a pagar: R$ 13,00</b></div>"
       + "<div class='m'>Chave Pix p/ prêmio ("+(n.pixType||"-")+"): "+(n.pix||"-")+"</div>"
       + "<div class='m muted'>Comprado em: "+(n.dataCompra||"-")+"</div>"
       + (grupo.length ? "<div class='m muted'>Comprado junto com: "+grupo.join(", ")+"</div>" : "");
@@ -591,25 +592,23 @@ function renderAdminList(){
       row.appendChild(el);
     }
     const select = document.createElement("select");
-    select.style.width = "120px";
+    select.style.width = "150px";
     select.style.margin = "0";
-    ["reservado","pago"].forEach(s=>{
+    [["reservado","Reservado"],["pago","Pago"],["cancelar","Cancelar reserva"]].forEach(([val,label])=>{
       const opt = document.createElement("option");
-      opt.value = s; opt.textContent = s;
-      if(n.status===s) opt.selected = true;
+      opt.value = val; opt.textContent = label;
+      if(n.status===val) opt.selected = true;
       select.appendChild(opt);
     });
     select.onchange = async ()=>{
-      await db.collection("rifa").doc("data").collection("numbers").doc(k).update({ status: select.value });
+      if(select.value === "cancelar"){
+        const ok = await liberarNumero(k);
+        if(!ok) select.value = n.status;
+      }else{
+        await db.collection("rifa").doc("data").collection("numbers").doc(k).update({ status: select.value });
+      }
     };
     row.appendChild(select);
-
-    const liberarBtn = document.createElement("button");
-    liberarBtn.className = "btn small secondary";
-    liberarBtn.textContent = "Liberar";
-    liberarBtn.title = "Marca como não pago, guarda no histórico e libera o número";
-    liberarBtn.onclick = ()=>liberarNumero(k);
-    row.appendChild(liberarBtn);
 
     const editarBtn = document.createElement("button");
     editarBtn.className = "btn small secondary";
@@ -745,7 +744,7 @@ function renderComprasTab(list){
 
     const liberarCompraBtn = document.createElement("button");
     liberarCompraBtn.className = "btn small secondary";
-    liberarCompraBtn.textContent = "Liberar";
+    liberarCompraBtn.textContent = "Cancelar reserva";
     liberarCompraBtn.title = "Marca como não pago, guarda no histórico e libera todos os números desta compra";
     liberarCompraBtn.onclick = ()=>liberarCompra(nums);
     btnRow.appendChild(liberarCompraBtn);
@@ -824,8 +823,8 @@ function defaultNumberDoc(){
 
 async function liberarNumero(k){
   const n = numbers[k];
-  const justificativa = prompt("Por que o número " + k + " está sendo liberado? (ex: não pagou em 48h)");
-  if(justificativa === null) return;
+  const justificativa = prompt("Por que o número " + k + " está sendo cancelado? (ex: não pagou em 48h). Isso fica salvo em \"Reservas canceladas\".");
+  if(justificativa === null) return false;
   const historicoCol = db.collection("rifa").doc("data").collection("historico");
   await historicoCol.add({
     numero: k, nome: n.nome||"", telefone: n.telefone||"", aluno: n.aluno||"",
@@ -835,6 +834,7 @@ async function liberarNumero(k){
   });
   await db.collection("rifa").doc("data").collection("numbers").doc(k).set(defaultNumberDoc());
   renderAdminList();
+  return true;
 }
 
 async function excluirTeste(k){

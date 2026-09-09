@@ -164,7 +164,7 @@
     <input id="pixInput" placeholder="Chave Pix (CPF)">
     <button class="btn small" style="margin-bottom:14px;" onclick="savePix()">Salvar chave Pix</button>
     <div style="display:flex;gap:6px;margin-bottom:10px;">
-      <button class="btn small secondary" id="tabCompras" onclick="setAdminTab('compras')">Compras</button>
+      <button class="btn small secondary" id="tabCompras" onclick="setAdminTab('compras')">Compras múltiplas</button>
       <button class="btn small secondary" id="tabReservado" onclick="setAdminTab('reservado')">Reservados</button>
       <button class="btn small secondary" id="tabPago" onclick="setAdminTab('pago')">Pagos</button>
       <button class="btn small secondary" id="tabHistorico" onclick="setAdminTab('historico')">Reservas canceladas</button>
@@ -631,15 +631,18 @@ function renderComprasTab(list){
   const keys = Object.keys(numbers).filter(k=>numbers[k].status !== "disponivel");
   const grupos = {};
   keys.forEach(k=>{
-    const gid = numbers[k].grupoId || ("solo_"+k);
+    const n = numbers[k];
+    const gid = n.grupoId || ("buyer_"+(n.nome||"").trim().toLowerCase()+"_"+(n.telefone||"").trim());
     if(!grupos[gid]) grupos[gid] = [];
     grupos[gid].push(k);
   });
-  const listaGrupos = Object.values(grupos).sort((a,b)=>{
-    const ta = numbers[a[0]].timestamp || parseDateBR(numbers[a[0]].dataCompra);
-    const tb = numbers[b[0]].timestamp || parseDateBR(numbers[b[0]].dataCompra);
-    return ta - tb;
-  });
+  const listaGrupos = Object.values(grupos)
+    .filter(nums=>nums.length > 1)
+    .sort((a,b)=>{
+      const ta = numbers[a[0]].timestamp || parseDateBR(numbers[a[0]].dataCompra);
+      const tb = numbers[b[0]].timestamp || parseDateBR(numbers[b[0]].dataCompra);
+      return ta - tb;
+    });
   list.innerHTML = "";
 
   const pendentes = listaGrupos.filter(nums=>nums.some(k=>numbers[k].status==="reservado"));
@@ -651,11 +654,11 @@ function renderComprasTab(list){
   resumo.style.marginBottom = "12px";
   resumo.style.fontSize = "14px";
   resumo.innerHTML = "<b>Total pendente de conferência: R$ "+totalPendente.toFixed(2).replace(".",",")+"</b>"
-    + " &middot; "+pendentes.length+" compra(s) com Pix ainda não confirmado";
+    + " &middot; "+pendentes.length+" comprador(es) com mais de um número ainda não confirmado";
   list.appendChild(resumo);
 
   if(listaGrupos.length === 0){
-    list.innerHTML += "<p style='font-size:13px;color:var(--muted)'>Nenhuma compra ainda.</p>";
+    list.innerHTML += "<p style='font-size:13px;color:var(--muted)'>Ninguém comprou mais de um número ainda.</p>";
     return;
   }
   listaGrupos.forEach(nums=>{
@@ -729,7 +732,23 @@ function renderComprasTab(list){
     const btnRow = document.createElement("div");
     btnRow.style.display = "flex";
     btnRow.style.gap = "8px";
+    btnRow.style.flexWrap = "wrap";
     btnRow.appendChild(editarBtn);
+
+    if(!tudoPago){
+      const pagarBtn = document.createElement("button");
+      pagarBtn.className = "btn small secondary";
+      pagarBtn.textContent = "Marcar todos como pago";
+      pagarBtn.onclick = ()=>marcarCompraComoPaga(nums);
+      btnRow.appendChild(pagarBtn);
+    }
+
+    const liberarCompraBtn = document.createElement("button");
+    liberarCompraBtn.className = "btn small secondary";
+    liberarCompraBtn.textContent = "Liberar";
+    liberarCompraBtn.title = "Marca como não pago, guarda no histórico e libera todos os números desta compra";
+    liberarCompraBtn.onclick = ()=>liberarCompra(nums);
+    btnRow.appendChild(liberarCompraBtn);
 
     const excluirBtn = document.createElement("button");
     excluirBtn.className = "btn small secondary";
@@ -827,6 +846,34 @@ async function excluirTeste(k){
 async function excluirCompraTeste(nums){
   if(!confirm("Excluir o teste dos números " + nums.join(", ") + " sem guardar histórico?")) return;
   const numbersCol = db.collection("rifa").doc("data").collection("numbers");
+  const batch = db.batch();
+  nums.forEach(k=>batch.set(numbersCol.doc(k), defaultNumberDoc()));
+  await batch.commit();
+  renderAdminList();
+}
+
+async function marcarCompraComoPaga(nums){
+  const numbersCol = db.collection("rifa").doc("data").collection("numbers");
+  const batch = db.batch();
+  nums.forEach(k=>batch.update(numbersCol.doc(k), { status: "pago" }));
+  await batch.commit();
+  renderAdminList();
+}
+
+async function liberarCompra(nums){
+  const justificativa = prompt("Por que a compra com os números " + nums.join(", ") + " está sendo liberada? (ex: não pagou em 48h)");
+  if(justificativa === null) return;
+  const historicoCol = db.collection("rifa").doc("data").collection("historico");
+  const numbersCol = db.collection("rifa").doc("data").collection("numbers");
+  await Promise.all(nums.map(k=>{
+    const n = numbers[k];
+    return historicoCol.add({
+      numero: k, nome: n.nome||"", telefone: n.telefone||"", aluno: n.aluno||"",
+      pix: n.pix||"", pixType: n.pixType||"", dataCompra: n.dataCompra||"", comprovante: n.comprovante||"",
+      statusAnterior: n.status||"reservado", justificativa: justificativa.trim(),
+      motivo: "nao_pago", liberadoEm: new Date().toLocaleString("pt-BR"), liberadoTimestamp: Date.now()
+    });
+  }));
   const batch = db.batch();
   nums.forEach(k=>batch.set(numbersCol.doc(k), defaultNumberDoc()));
   await batch.commit();
